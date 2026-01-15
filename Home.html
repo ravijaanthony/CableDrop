@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CableDrop</title>
+    <script src="./Home.js" defer></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; text-align: center; }
+        .card { background: #f4f4f4; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; margin: 10px; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .hidden { display: none; }
+        #log { margin-top: 20px; text-align: left; max-height: 200px; overflow-y: auto; background: #eee; padding: 10px; font-family: monospace; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header></header>
+    <main>
+
+      <div class="card">
+        <h1>📲 Photo Router</h1>
+        <p>Transfer photos from iPhone to PC entirely offline.</p>
+
+        <div id="step1">
+            <h3>Step 1: Where should photos go?</h3>
+            <button onclick="selectDestination()">📂 Select PC Backup Folder</button>
+        </div>
+
+        <div id="step2" class="hidden">
+            <h3>Step 2: Select Photos from iPhone</h3>
+            <p style="font-size: 0.9em; color: #666;">(Navigate to This PC > Apple iPhone > Internal Storage > DCIM)</p>
+            <input type="file" id="sourceInput" multiple accept="image/*,.heic,.MOV" class="hidden">
+            <button onclick="document.getElementById('sourceInput').click()">📸 Select Photos</button>
+        </div>
+
+        <div id="log" class="hidden"></div>
+    </div>
+
+    
+
+    </main>
+    <footer></footer>
+  </body>
+</html>
