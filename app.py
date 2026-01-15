@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import threading
@@ -14,6 +14,15 @@ destination_folder = None
 @app.route('/')
 def index():
     return render_template('Home.html')
+
+# Serve static files explicitly
+@app.route('/Home.js')
+def serve_js():
+    return send_from_directory('.', 'Home.js')
+
+@app.route('/Home.css')
+def serve_css():
+    return send_from_directory('.', 'Home.css')
 
 @app.route('/api/select-destination', methods=['POST'])
 def select_destination():
