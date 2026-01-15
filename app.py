@@ -68,9 +68,9 @@ def transfer_files():
 if __name__ == '__main__':
     def open_browser():
         time.sleep(1)
-        webbrowser.open('http://localhost:5000')
+        webbrowser.open('http://localhost:8080')
     
     thread = threading.Thread(target=open_browser, daemon=True)
     thread.start()
     
-    app.run(debug=False, host='127.0.0.1', port=5000)
+    app.run(debug=False, host='127.0.0.1', port=8080)
