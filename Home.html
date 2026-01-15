@@ -5,12 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CableDrop</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; text-align: center; }
-        .card { background: #f4f4f4; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; margin: 10px; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .hidden { display: none; }
-        #log { margin-top: 20px; text-align: left; max-height: 200px; overflow-y: auto; background: #eee; padding: 10px; font-family: monospace; font-size: 12px; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; text-align: center; }
+      .card { background: #f4f4f4; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+      button { background: #007bff; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 6px; cursor: pointer; margin: 10px; }
+      button:disabled { background: #ccc; cursor: not-allowed; }
+      button.secondary { background: #6c757d; }
+      button.secondary:hover { background: #5a6268; }
+      .hidden { display: none; }
+      #log { margin-top: 20px; text-align: left; max-height: 200px; overflow-y: auto; background: #eee; padding: 10px; font-family: monospace; font-size: 12px; }
+      .folder-options { margin: 15px 0; }
+      .folder-button { display: block; margin: 8px auto; width: 90%; text-align: left; padding: 12px; background: #e9ecef; color: #000; border: 1px solid #dee2e6; cursor: pointer; border-radius: 6px; }
+      .folder-button:hover { background: #dee2e6; }
+      .divider { margin: 15px 0; text-align: center; color: #999; }
     </style>
   </head>
   <body>
@@ -21,119 +27,211 @@
         <p>Transfer photos from iPhone to PC entirely offline.</p>
 
         <div id="step1">
-            <h3>Step 1: Where should photos go?</h3>
-            <input type="file" id="destInput" webkitdirectory directory mozbrowser multiple style="display: none;">
-            <button onclick="selectDestination()">📂 Select PC Backup Folder</button>
+          <h3>Step 1: Select Photos from iPhone</h3>
+          <p style="font-size: 0.9em; color: #666;">(Navigate to This PC > Apple iPhone > Internal Storage > DCIM)</p>
+          <input type="file" id="sourceInput" multiple accept="image/*,.heic,.MOV" class="hidden">
+          <button onclick="document.getElementById('sourceInput').click()">📸 Select Photos from iPhone</button>
         </div>
 
         <div id="step2" class="hidden">
-            <h3>Step 2: Select Photos from iPhone</h3>
-            <p style="font-size: 0.9em; color: #666;">(Navigate to This PC > Apple iPhone > Internal Storage > DCIM)</p>
-            <input type="file" id="sourceInput" multiple accept="image/*,.heic,.MOV" class="hidden">
-            <button onclick="document.getElementById('sourceInput').click()">📸 Select Photos</button>
+          <h3>Step 2: Where should photos go?</h3>
+          <p style="font-size: 0.9em; color: #666;">Select destination folder for backup</p>
+
+          <div class="folder-options" id="commonFolders"></div>
+
+          <div class="divider">or</div>
+
+          <div>
+            <button onclick="downloadToCustom()" class="secondary">💾 Save to Custom Location</button>
+          </div>
         </div>
 
         <div id="log" class="hidden"></div>
-    </div>
-
+      </div>
     </main>
     <footer></footer>
 
     <script>
-        let destinationPath = null;
+      let destinationPath = null;
+      let selectedFilesArray = [];
 
-        // 1. Select destination folder using browser's folder picker
-        function selectDestination() {
-          const input = document.getElementById('destInput');
-          input.click();
-        }
+      // 1. Select photos from phone first
+      document.getElementById("sourceInput").addEventListener("change", (event) => {
+        const files = event.target.files;
+        if (files.length === 0) return;
 
-        // Handle destination folder selection
-        document.getElementById('destInput').addEventListener('change', async (event) => {
-          const files = event.target.files;
-          if (files.length === 0) return;
+        // Store files as array immediately
+        selectedFilesArray = Array.from(files);
 
-          try {
-            // Get the folder path from the first file's relative path
-            const firstFilePath = files[0].webkitRelativePath;
-            const folderName = firstFilePath.split('/')[0];
-            
-            const response = await fetch('/api/select-destination', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ path: folderName })
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-              destinationPath = data.path;
-              document.getElementById("step1").classList.add("hidden");
-              document.getElementById("step2").classList.remove("hidden");
-              log(`✅ Destination set: ${data.name}`);
-            } else {
-              alert(`Error: ${data.error}`);
-            }
-          } catch (err) {
-            alert(`Error: ${err.message}`);
-          }
+        const logDiv = document.getElementById("log");
+        logDiv.classList.remove("hidden");
+        log(`✅ Selected ${selectedFilesArray.length} photos from iPhone`);
+        selectedFilesArray.forEach((file, idx) => {
+          log(`   ${idx + 1}. ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         });
 
-        // 2. Listen for file selection and transfer
-        document.getElementById("sourceInput").addEventListener("change", async (event) => {
-          const files = event.target.files;
-          if (files.length === 0) return;
+        // Move to step 2 and load common folders
+        document.getElementById("step1").classList.add("hidden");
+        document.getElementById("step2").classList.remove("hidden");
+        loadCommonFolders();
+      });
 
-          if (!destinationPath) {
-            alert("Please select a destination folder first!");
+      // Load common backup folders
+      async function loadCommonFolders() {
+        try {
+          const response = await fetch('/api/get-common-folders');
+          const data = await response.json();
+
+          const container = document.getElementById('commonFolders');
+          container.innerHTML = '<p style="font-size: 0.9em; color: #666;">Quick select:</p>';
+
+          if (data.folders && data.folders.length > 0) {
+            data.folders.forEach(folder => {
+              const btn = document.createElement('button');
+              btn.className = 'folder-button';
+              btn.textContent = `📁 ${folder.name}`;
+              btn.onclick = () => selectPath(folder.path);
+              container.appendChild(btn);
+            });
+          }
+        } catch (err) {
+          console.error('Error loading folders:', err);
+        }
+      }
+
+      // Set destination path from common folders
+      async function selectPath(path) {
+        await setDestinationPath(path);
+      }
+
+      // Download ZIP so browser handles save location
+      async function downloadToCustom() {
+        if (!selectedFilesArray || selectedFilesArray.length === 0) {
+          alert('No photos selected!');
+          return;
+        }
+
+        log(`💾 Preparing ZIP for ${selectedFilesArray.length} files...`);
+
+        try {
+          const formData = new FormData();
+          for (let i = 0; i < selectedFilesArray.length; i++) {
+            formData.append('files', selectedFilesArray[i]);
+          }
+
+          const response = await fetch('/api/download-zip', {
+            method: 'POST',
+            body: formData
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            alert(`Error: ${err.error || 'Failed to download'}`);
             return;
           }
 
-          const logDiv = document.getElementById("log");
-          logDiv.classList.remove("hidden");
-          log(`🚀 Starting transfer of ${files.length} files...`);
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
 
-          try {
-            const formData = new FormData();
-            for (const file of files) {
-              formData.append('files', file);
-              log(`📤 Queuing: ${file.name}...`);
-            }
-
-            const response = await fetch('/api/transfer-files', {
-              method: 'POST',
-              body: formData
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-              log(`✅ Transferred: ${data.transferred} files`);
-              if (data.failed > 0) {
-                log(`❌ Failed: ${data.failed} files`);
-                if (data.results.failed.length > 0) {
-                  data.results.failed.forEach(f => {
-                    log(`  - ${f.filename}: ${f.error}`);
-                  });
-                }
-              }
-              log(`🎉 Done!`);
-              alert("Transfer Complete!");
-            } else {
-              log(`❌ Error: ${data.error}`);
-              alert(`Transfer failed: ${data.error}`);
-            }
-          } catch (err) {
-            log(`❌ Error: ${err.message}`);
-            alert(`Transfer failed: ${err.message}`);
-          }
-        });
-
-        function log(msg) {
-          const div = document.getElementById("log");
-          div.innerHTML += `<div>${msg}</div>`;
-          div.scrollTop = div.scrollHeight;
+          log('✅ Download started. Choose save location in your browser.');
+        } catch (err) {
+          alert(`Error: ${err.message}`);
         }
+      }
+
+      async function setDestinationPath(path) {
+        try {
+          const response = await fetch('/api/select-destination', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: path })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            destinationPath = data.path;
+            log(`✅ Destination set: ${data.name}`);
+
+            if (selectedFilesArray && selectedFilesArray.length > 0) {
+              await transferFiles(selectedFilesArray);
+            } else {
+              alert('No files to transfer!');
+            }
+          } else {
+            alert(`Error: ${data.error}`);
+          }
+        } catch (err) {
+          alert(`Error: ${err.message}`);
+        }
+      }
+
+      // Transfer files from phone to laptop (common folders only)
+      async function transferFiles(filesToTransfer) {
+        if (!filesToTransfer || filesToTransfer.length === 0) {
+          alert("No photos selected!");
+          return;
+        }
+
+        if (!destinationPath) {
+          alert("Destination folder not selected!");
+          return;
+        }
+
+        log(`🚀 Starting transfer of ${filesToTransfer.length} files...`);
+
+        try {
+          const formData = new FormData();
+
+          for (let i = 0; i < filesToTransfer.length; i++) {
+            const file = filesToTransfer[i];
+            formData.append('files', file);
+            log(`📤 Queuing: ${file.name}...`);
+          }
+
+          log(`📡 Sending to server...`);
+
+          const response = await fetch('/api/transfer-files', {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            log(`✅ Transferred: ${data.transferred} files`);
+            if (data.failed > 0) {
+              log(`❌ Failed: ${data.failed} files`);
+              if (data.results && data.results.failed && data.results.failed.length > 0) {
+                data.results.failed.forEach(f => {
+                  log(`  - ${f.filename}: ${f.error}`);
+                });
+              }
+            }
+            log(`🎉 Done!`);
+            alert("Transfer Complete!");
+          } else {
+            log(`❌ Error: ${data.error}`);
+            alert(`Transfer failed: ${data.error}`);
+          }
+        } catch (err) {
+          log(`❌ Error: ${err.message}`);
+          alert(`Transfer failed: ${err.message}`);
+        }
+      }
+
+      function log(msg) {
+        const div = document.getElementById("log");
+        div.innerHTML += `<div>${msg}</div>`;
+        div.scrollTop = div.scrollHeight;
+      }
     </script>
   </body>
 </html>

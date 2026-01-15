@@ -1,12 +1,19 @@
 let destinationPath = null;
 
-// 1. Select destination folder
-async function selectDestination() {
+// 1. Select destination folder using browser's folder picker
+function selectDestination() {
+  const input = document.getElementById('destInput');
+  input.click();
+}
+
+// Handle destination folder selection
+document.getElementById('destInput').addEventListener('change', async (event) => {
+  const files = event.target.files;
+  if (files.length === 0) return;
+
   try {
-    // Prompt for folder path
-    const folderPath = prompt('Enter destination folder path:\n(e.g., C:\\Users\\YourName\\Pictures)');
-    
-    if (!folderPath) return;
+    // Send folder path to backend
+    const folderPath = files[0].webkitRelativePath.split('/')[0];
     
     const response = await fetch('/api/select-destination', {
       method: 'POST',
@@ -27,7 +34,7 @@ async function selectDestination() {
   } catch (err) {
     alert(`Error: ${err.message}`);
   }
-}
+});
 
 // 2. Listen for file selection and transfer
 document.getElementById("sourceInput").addEventListener("change", async (event) => {
