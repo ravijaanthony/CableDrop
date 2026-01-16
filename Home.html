@@ -17,6 +17,9 @@
       .folder-button { display: block; margin: 8px auto; width: 90%; text-align: left; padding: 12px; background: #e9ecef; color: #000; border: 1px solid #dee2e6; cursor: pointer; border-radius: 6px; }
       .folder-button:hover { background: #dee2e6; }
       .divider { margin: 15px 0; text-align: center; color: #999; }
+      .progress-wrap { margin-top: 15px; }
+      progress { width: 100%; height: 16px; }
+      #progressText { font-size: 0.9em; color: #555; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -46,6 +49,11 @@
           </div>
         </div>
 
+        <div id="progressWrap" class="progress-wrap hidden">
+          <progress id="progressBar" value="0" max="100"></progress>
+          <div id="progressText">Preparing…</div>
+        </div>
+
         <div id="log" class="hidden"></div>
       </div>
     </main>
@@ -55,12 +63,30 @@
       let destinationPath = null;
       let selectedFilesArray = [];
 
+      const progressWrap = document.getElementById('progressWrap');
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+
+      function showProgress() {
+        progressWrap.classList.remove('hidden');
+      }
+
+      function hideProgress() {
+        progressWrap.classList.add('hidden');
+        progressBar.value = 0;
+        progressText.textContent = 'Preparing…';
+      }
+
+      function setProgress(percent, label) {
+        progressBar.value = Math.max(0, Math.min(100, percent));
+        if (label) progressText.textContent = label;
+      }
+
       // 1. Select photos from phone first
       document.getElementById("sourceInput").addEventListener("change", (event) => {
         const files = event.target.files;
         if (files.length === 0) return;
 
-        // Store files as array immediately
         selectedFilesArray = Array.from(files);
 
         const logDiv = document.getElementById("log");
@@ -70,13 +96,11 @@
           log(`   ${idx + 1}. ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         });
 
-        // Move to step 2 and load common folders
         document.getElementById("step1").classList.add("hidden");
         document.getElementById("step2").classList.remove("hidden");
         loadCommonFolders();
       });
 
-      // Load common backup folders
       async function loadCommonFolders() {
         try {
           const response = await fetch('/api/get-common-folders');
@@ -99,12 +123,10 @@
         }
       }
 
-      // Set destination path from common folders
       async function selectPath(path) {
         await setDestinationPath(path);
       }
 
-      // Download ZIP so browser handles save location
       async function downloadToCustom() {
         if (!selectedFilesArray || selectedFilesArray.length === 0) {
           alert('No photos selected!');
@@ -112,6 +134,8 @@
         }
 
         log(`💾 Preparing ZIP for ${selectedFilesArray.length} files...`);
+        showProgress();
+        setProgress(0, 'Uploading photos…');
 
         try {
           const formData = new FormData();
@@ -119,18 +143,9 @@
             formData.append('files', selectedFilesArray[i]);
           }
 
-          const response = await fetch('/api/download-zip', {
-            method: 'POST',
-            body: formData
-          });
+          const blob = await uploadWithProgress('/api/download-zip', formData, 'Uploading photos…');
 
-          if (!response.ok) {
-            const err = await response.json();
-            alert(`Error: ${err.error || 'Failed to download'}`);
-            return;
-          }
-
-          const blob = await response.blob();
+          setProgress(100, 'Starting download…');
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -143,6 +158,8 @@
           log('✅ Download started. Choose save location in your browser.');
         } catch (err) {
           alert(`Error: ${err.message}`);
+        } finally {
+          hideProgress();
         }
       }
 
@@ -173,7 +190,6 @@
         }
       }
 
-      // Transfer files from phone to laptop (common folders only)
       async function transferFiles(filesToTransfer) {
         if (!filesToTransfer || filesToTransfer.length === 0) {
           alert("No photos selected!");
@@ -186,31 +202,25 @@
         }
 
         log(`🚀 Starting transfer of ${filesToTransfer.length} files...`);
+        showProgress();
+        setProgress(0, 'Uploading photos…');
 
         try {
           const formData = new FormData();
-
           for (let i = 0; i < filesToTransfer.length; i++) {
             const file = filesToTransfer[i];
             formData.append('files', file);
             log(`📤 Queuing: ${file.name}...`);
           }
 
-          log(`📡 Sending to server...`);
+          const responseJson = await uploadWithProgress('/api/transfer-files', formData, 'Uploading photos…', true);
 
-          const response = await fetch('/api/transfer-files', {
-            method: 'POST',
-            body: formData
-          });
-
-          const data = await response.json();
-
-          if (data.success) {
-            log(`✅ Transferred: ${data.transferred} files`);
-            if (data.failed > 0) {
-              log(`❌ Failed: ${data.failed} files`);
-              if (data.results && data.results.failed && data.results.failed.length > 0) {
-                data.results.failed.forEach(f => {
+          if (responseJson.success) {
+            log(`✅ Transferred: ${responseJson.transferred} files`);
+            if (responseJson.failed > 0) {
+              log(`❌ Failed: ${responseJson.failed} files`);
+              if (responseJson.results && responseJson.results.failed && responseJson.results.failed.length > 0) {
+                responseJson.results.failed.forEach(f => {
                   log(`  - ${f.filename}: ${f.error}`);
                 });
               }
@@ -218,13 +228,55 @@
             log(`🎉 Done!`);
             alert("Transfer Complete!");
           } else {
-            log(`❌ Error: ${data.error}`);
-            alert(`Transfer failed: ${data.error}`);
+            log(`❌ Error: ${responseJson.error}`);
+            alert(`Transfer failed: ${responseJson.error}`);
           }
         } catch (err) {
           log(`❌ Error: ${err.message}`);
           alert(`Transfer failed: ${err.message}`);
+        } finally {
+          hideProgress();
         }
+      }
+
+      function uploadWithProgress(url, formData, label, expectJson = false) {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', url, true);
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setProgress(percent, `${label} ${percent}%`);
+            } else {
+              setProgress(50, `${label} …`);
+            }
+          };
+
+          xhr.onload = () => {
+            try {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                if (expectJson) {
+                  resolve(JSON.parse(xhr.responseText));
+                } else {
+                  resolve(xhr.response);
+                }
+              } else {
+                reject(new Error(xhr.responseText || `Request failed: ${xhr.status}`));
+              }
+            } catch (e) {
+              reject(e);
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('Network error'));
+
+          if (!expectJson) {
+            xhr.responseType = 'blob';
+          }
+
+          xhr.send(formData);
+        });
       }
 
       function log(msg) {
